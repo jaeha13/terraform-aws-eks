@@ -11,7 +11,7 @@ resource "aws_vpc" "main" {
 # Internet Gateway
 resource "aws_internet_gateway" "igw" {
   count = var.create_internet_gateway ? 1 : 0
-  
+
   vpc_id = aws_vpc.main.id
 
   tags = {
@@ -19,105 +19,109 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
-# Subnet(Public)
-resource "aws_subnet" "public" {
-  count = 2
-
-  vpc_id     = aws_vpc.main.id
-  cidr_block = cidrsubnet(var.vpc_cidr, 8, count.index)
-  availability_zone = var.availability_zones[count.index]
-
-  tags = {
-    Name = "${var.vpc_name}-public-subnet${count.index + 1}"
+# Subnet
+resource "aws_subnet" "subnet" {
+  for_each = {
+    for subnet in var.subnets :
+    subnet.name => subnet
   }
-}
-
-# Subnet(Private)
-resource "aws_subnet" "private" {
-  count = 2
 
   vpc_id     = aws_vpc.main.id
-  cidr_block = cidrsubnet(var.vpc_cidr, 8, 10 + count.index)
-  availability_zone = var.availability_zones[count.index]
+  cidr_block = each.value.cidr_block
+  availability_zone = each.value.availability_zone
+
+  map_public_ip_on_launch = each.value.map_public_ip_on_launch
+
+  private_dns_hostname_type_on_launch = (
+    each.value.private_dns_hostname_type_on_launch
+  )
+
+  enable_dns64 = each.value.enable_dns64
 
   tags = {
-    Name = "${var.vpc_name}-private-subnet${count.index + 1}"
+    Name = "${var.vpc_name}-${each.key}"
   }
 }
 
 # Routing Table
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  tags = {
-    Name = "${var.vpc_name}-public-rt"
+resource "aws_route_table" "route_table" {
+  for_each = {
+    for rt in var.route_tables :
+      rt.name => rt
   }
-}
-
-resource "aws_route_table" "private" {
-  count = length(aws_subnet.private)
 
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "${var.vpc_name}-private-rt${count.index + 1}"
+    Name = "${var.vpc_name}-${each.key}"
   }
 }
 
 # RouteTableAssociation
-resource "aws_route_table_association" "public" {
-  count = length(aws_subnet.public)
+resource "aws_route_table_association" "route_table_association" {
+  for_each = {
+    for subnet in var.subnets :
+    subnet.name => subnet
+  }
 
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+  subnet_id = aws_subnet.subnet[each.key].id
+  route_table_id = aws_route_table.route_table[
+    each.value.route_table
+  ].id
 }
 
-resource "aws_route_table_association" "private" {
-  count = length(aws_subnet.private)
+# Route
+resource "aws_route" "route" {
+  for_each = {
+    for route in var.routes :
+    "${route.route_table}-${route.destination}-${route.target}" => route
+  }
 
-  subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private[count.index].id
-}
+  route_table_id = aws_route_table.route_table[each.value.route_table].id
 
-# Route(Public)
-resource "aws_route" "public_internet" {
-  count = var.create_internet_gateway ? 1 : 0
+  destination_cidr_block = each.value.destination
+  
+  # Internet Gateway
+  gateway_id = (each.value.target_type == "internet_gateway"
+    ? aws_internet_gateway.igw[0].id
+    : null
+  )
 
-  route_table_id         = aws_route_table.public.id
-  destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.igw[0].id
+  # NAT Gateway
+  nat_gateway_id = (each.value.target_type == "nat_gateway"
+    ? aws_nat_gateway.natgw[each.value.target].id
+    : null
+  )
 }
 
 # Elastic IP
-resource "aws_eip" "nat_eip" {
-  count = var.create_internet_gateway ? length(aws_subnet.public) : 0
+resource "aws_eip" "nat" {
+  for_each = {
+    for natgw in var.nat_gateways :
+    natgw.name => natgw
+  }
 
-  domain = "vpc" # default
+  domain = "vpc"
 
   tags = {
-    Name = "${var.vpc_name}-nat-eip${count.index + 1}"
+    Name = "${var.vpc_name}-${each.key}-eip"
   }
 }
 
 # NAT Gateway
 resource "aws_nat_gateway" "natgw" {
-  count = var.create_internet_gateway ? length(aws_subnet.public) : 0
-
-  allocation_id = aws_eip.nat_eip[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
-
-  tags = {
-    Name = "${var.vpc_name}-natgw${count.index + 1}"
+  for_each = {
+    for natgw in var.nat_gateways :
+    natgw.name => natgw
   }
 
-  depends_on = [aws_internet_gateway.igw]
-}
+  allocation_id = aws_eip.nat[each.key].id
 
-# Route(private)
-resource "aws_route" "private_nat" {
-  count = var.create_internet_gateway ? length(aws_subnet.private) : 0
+  subnet_id = aws_subnet.subnet[
+    each.value.subnet
+  ].id
 
-  route_table_id         = aws_route_table.private[count.index].id
-  destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.natgw[count.index].id
+  tags = {
+    Name = "${var.vpc_name}-${each.key}-natgw"
+  }
 }

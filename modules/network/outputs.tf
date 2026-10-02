@@ -3,29 +3,33 @@ output "vpc_id" {
 }
 
 output "internet_gateway_id" {
-  value = aws_internet_gateway.igw[*].id
+  value = var.create_internet_gateway ? aws_internet_gateway.igw[0].id : null
 }
 
-output "public_subnet_ids" {
-  value = aws_subnet.public[*].id
+output "subnet_ids" {
+  value = {
+    for name, subnet in aws_subnet.subnet :
+      name => subnet.id
+  }
 }
 
-output "private_subnet_ids" {
-  value = aws_subnet.private[*].id
-}
-
-output "public_route_table_id" {
-  value = aws_route_table.public.id
-}
-
-output "private_route_table_ids" {
-  value = aws_route_table.private[*].id
+output "route_table_ids" {
+  value = {
+    for name, rt in aws_route_table.route_table :
+      name => rt.id
+  }
 }
 
 output "nat_gateway_ids" {
-  value = aws_nat_gateway.natgw[*].id
+  value = {
+    for name, natgw in aws_nat_gateway.natgw :
+      name => natgw.id
+  }
 }
 
 output "nat_eip_ids" {
-  value = aws_eip.nat_eip[*].id
+  value = {
+    for name, eip in aws_eip.nat :
+      name => eip.id
+  }
 }
