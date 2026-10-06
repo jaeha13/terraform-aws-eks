@@ -82,7 +82,7 @@ resource "aws_route" "route" {
   destination_cidr_block = each.value.destination
   
   # Internet Gateway
-  gateway_id = (each.value.target_type == "internet_gateway"
+  gateway_id = (each.value.target_type == "internet_gateway" && var.create_internet_gateway
     ? aws_internet_gateway.igw[0].id
     : null
   )
