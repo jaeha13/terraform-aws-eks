@@ -5,6 +5,7 @@ data "aws_ssm_parameter" "amazon_linux" {
 resource "aws_instance" "bastion" {
   ami = var.ami_id != null ? var.ami_id : data.aws_ssm_parameter.amazon_linux.value
 
+  subnet_id = var.subnet_id
   instance_type = var.instance_type
   iam_instance_profile = var.iam_instance_profile
 

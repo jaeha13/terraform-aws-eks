@@ -21,3 +21,9 @@ variable "iam_instance_profile" {
   type        = string
   default     = null
 }
+
+variable "subnet_id" {
+  description = "Subnet ID where the Bastion instance will be created"
+  type        = string
+  default     = null
+}
